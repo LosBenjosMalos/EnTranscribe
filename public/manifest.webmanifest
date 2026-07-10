@@ -1,0 +1,15 @@
+{
+  "name": "EnTranscribe — Local speech to text",
+  "short_name": "EnTranscribe",
+  "description": "Private speech-to-text in your browser, powered locally by whisper.cpp.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f1e8",
+  "theme_color": "#153c3b",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

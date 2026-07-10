@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#153c3b" />
+    <meta
+      name="description"
+      content="Private speech-to-text in your browser, powered locally by whisper.cpp."
+    />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <title>EnTranscribe — Local speech to text</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="EnTranscribe home">
+        <span class="brand-mark" aria-hidden="true">En</span>
+        <span>EnTranscribe</span>
+      </a>
+      <div class="privacy-pill">
+        <span class="privacy-dot" aria-hidden="true"></span>
+        Audio stays on this device
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <section class="hero" aria-labelledby="page-title">
+        <p class="eyebrow">LOCAL SPEECH TO TEXT</p>
+        <h1 id="page-title">Speak naturally.<br /><em>Keep it private.</em></h1>
+        <p class="hero-copy">
+          Record a thought and turn it into clean text without sending your voice to a server.
+        </p>
+      </section>
+
+      <section class="workspace" aria-label="Transcription workspace">
+        <article class="recorder-card card">
+          <div class="card-heading">
+            <div>
+              <p class="section-label">RECORDER</p>
+              <h2>Ready when you are</h2>
+            </div>
+            <span id="statusBadge" class="status-badge" data-tone="neutral">Starting…</span>
+          </div>
+
+          <div class="recorder-stage">
+            <div id="recordHalo" class="record-halo" data-state="idle">
+              <button id="recordButton" class="record-button" type="button" disabled aria-label="Start recording">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 15.5a3.5 3.5 0 0 0 3.5-3.5V6a3.5 3.5 0 1 0-7 0v6a3.5 3.5 0 0 0 3.5 3.5Z" />
+                  <path d="M5.75 11.25V12a6.25 6.25 0 0 0 12.5 0v-.75M12 18.25V22M8.75 22h6.5" />
+                </svg>
+              </button>
+              <span class="pulse pulse-one"></span>
+              <span class="pulse pulse-two"></span>
+            </div>
+            <div class="meter" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <p id="recordingTime" class="recording-time">00:00</p>
+            <p id="recorderHint" class="recorder-hint">Prepare a local model to begin</p>
+            <kbd>Alt</kbd><span class="shortcut-plus">+</span><kbd>R</kbd>
+          </div>
+
+          <div class="model-panel">
+            <div class="field-group model-field">
+              <label for="modelSelect">Local model</label>
+              <select id="modelSelect">
+                <option value="base">Base · Multilingual · 142 MB</option>
+                <option value="base.en">Base · English · 142 MB</option>
+                <option value="tiny">Tiny · Multilingual · 75 MB</option>
+                <option value="tiny.en">Tiny · English · 75 MB</option>
+              </select>
+            </div>
+            <button id="prepareButton" class="primary-button" type="button" disabled>
+              Prepare local model
+            </button>
+            <div id="modelProgress" class="progress-wrap" hidden>
+              <div class="progress-track"><span id="progressBar"></span></div>
+              <div class="progress-meta">
+                <span id="progressLabel">Preparing…</span>
+                <span id="progressValue">0%</span>
+              </div>
+            </div>
+            <button id="sampleButton" class="text-button" type="button" disabled>
+              Run the included audio test
+            </button>
+          </div>
+
+          <div class="settings-row">
+            <div class="field-group">
+              <label for="languageSelect">Spoken language</label>
+              <select id="languageSelect">
+                <option value="auto">Detect automatically</option>
+                <option value="en">English</option>
+                <option value="de">German</option>
+                <option value="fr">French</option>
+                <option value="es">Spanish</option>
+                <option value="it">Italian</option>
+                <option value="nl">Dutch</option>
+                <option value="pl">Polish</option>
+                <option value="pt">Portuguese</option>
+                <option value="uk">Ukrainian</option>
+                <option value="zh">Chinese</option>
+                <option value="ja">Japanese</option>
+              </select>
+            </div>
+            <div class="field-group compact-field">
+              <label for="threadSelect">CPU threads</label>
+              <select id="threadSelect">
+                <option value="2">2 · Gentle</option>
+                <option value="4" selected>4 · Balanced</option>
+                <option value="6">6 · Fast</option>
+              </select>
+            </div>
+          </div>
+
+          <label class="toggle-row">
+            <input id="autoStopToggle" type="checkbox" checked />
+            <span class="toggle-control" aria-hidden="true"></span>
+            <span>
+              <strong>Stop after silence</strong>
+              <small>Finishes after about 1.4 seconds of quiet</small>
+            </span>
+          </label>
+        </article>
+
+        <article class="transcript-card card">
+          <div class="card-heading transcript-heading">
+            <div>
+              <p class="section-label">TRANSCRIPT</p>
+              <h2>Your words, ready to use</h2>
+            </div>
+            <span id="characterCount" class="character-count">0 characters</span>
+          </div>
+          <label class="sr-only" for="transcript">Transcribed text</label>
+          <textarea
+            id="transcript"
+            placeholder="Your transcription will appear here…"
+            spellcheck="true"
+          ></textarea>
+          <div class="transcript-actions">
+            <button id="clearButton" class="secondary-button" type="button">Clear</button>
+            <button id="copyButton" class="copy-button" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="8" y="8" width="11" height="11" rx="2" />
+                <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+              </svg>
+              Copy text
+            </button>
+          </div>
+          <label class="toggle-row compact-toggle">
+            <input id="autoCopyToggle" type="checkbox" />
+            <span class="toggle-control" aria-hidden="true"></span>
+            <span>
+              <strong>Copy automatically</strong>
+              <small>Browser permission may be required</small>
+            </span>
+          </label>
+        </article>
+      </section>
+
+      <section class="diagnostics card" aria-labelledby="diagnostics-title">
+        <div class="card-heading">
+          <div>
+            <p class="section-label">DEVICE CHECK</p>
+            <h2 id="diagnostics-title">Local runtime diagnostics</h2>
+          </div>
+          <button id="copyDiagnosticsButton" class="secondary-button" type="button">Copy report</button>
+        </div>
+        <div id="diagnosticGrid" class="diagnostic-grid" aria-live="polite"></div>
+        <details>
+          <summary>Technical details</summary>
+          <pre id="systemInfo">Waiting for the local runtime…</pre>
+        </details>
+      </section>
+    </main>
+
+    <footer>
+      <div class="footer-lock" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+      </div>
+      <div>
+        <strong>Private by design</strong>
+        <p>Audio is held in memory only and processed locally with whisper.cpp. No account. No upload. No history.</p>
+      </div>
+      <a href="https://github.com/LosBenjosMalos/EnTranscribe" target="_blank" rel="noreferrer">Source code</a>
+    </footer>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
