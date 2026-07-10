@@ -87,7 +87,7 @@ async function initialize(): Promise<void> {
     return;
   }
 
-  const runtimeUrl = new URL("wasm/entranscribe.js", document.baseURI).toString();
+  const runtimeUrl = new URL("wasm/entranscribe.js?v=6.0.2", document.baseURI).toString();
   whisper = new WhisperClient(runtimeUrl);
   whisper.onEvent(handleWorkerEvent);
   await checkMicrophonePermission();
