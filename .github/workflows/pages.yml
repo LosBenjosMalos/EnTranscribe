@@ -32,7 +32,7 @@ jobs:
       - name: Set up Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: "4.0.15"
+          version: "6.0.2"
           actions-cache-folder: emsdk-cache
 
       - name: Install web dependencies
