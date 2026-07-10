@@ -7,16 +7,19 @@ export type MeterSample = {
 
 export class AudioRecorder {
   private stream: MediaStream | null = null;
-  private mediaRecorder: MediaRecorder | null = null;
-  private chunks: Blob[] = [];
+  private source: MediaStreamAudioSourceNode | null = null;
+  private processor: ScriptProcessorNode | null = null;
+  private silentOutput: GainNode | null = null;
+  private chunks: Float32Array[] = [];
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private meterFrame = 0;
   private startedAt = 0;
   private onMeter: ((sample: MeterSample) => void) | null = null;
+  private recording = false;
 
   get isRecording(): boolean {
-    return this.mediaRecorder?.state === "recording";
+    return this.recording;
   }
 
   async start(onMeter: (sample: MeterSample) => void): Promise<void> {
@@ -24,71 +27,95 @@ export class AudioRecorder {
       throw new Error("Microphone recording is not available in this browser.");
     }
 
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
-    this.chunks = [];
-    this.onMeter = onMeter;
-    this.audioContext = new AudioContext();
-    const source = this.audioContext.createMediaStreamSource(this.stream);
-    this.analyser = this.audioContext.createAnalyser();
-    this.analyser.fftSize = 1024;
-    this.analyser.smoothingTimeConstant = 0.68;
-    source.connect(this.analyser);
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      this.chunks = [];
+      this.onMeter = onMeter;
+      this.audioContext = new AudioContext();
+      await this.audioContext.resume();
+      this.source = this.audioContext.createMediaStreamSource(this.stream);
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 1024;
+      this.analyser.smoothingTimeConstant = 0.68;
+      this.source.connect(this.analyser);
 
-    const preferredType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) =>
-      MediaRecorder.isTypeSupported(type),
-    );
-    this.mediaRecorder = preferredType
-      ? new MediaRecorder(this.stream, { mimeType: preferredType })
-      : new MediaRecorder(this.stream);
-    this.mediaRecorder.addEventListener("dataavailable", (event) => {
-      if (event.data.size > 0) this.chunks.push(event.data);
-    });
-    this.startedAt = performance.now();
-    this.mediaRecorder.start(250);
-    this.readMeter();
+      // Capture raw PCM instead of a MediaRecorder blob. Browser codec support
+      // varies by OS and microphone (notably Continuity microphones on macOS),
+      // while whisper.cpp ultimately needs uncompressed samples anyway.
+      this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+      this.processor.onaudioprocess = (event) => {
+        if (!this.recording) return;
+        this.chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+      };
+      this.silentOutput = this.audioContext.createGain();
+      this.silentOutput.gain.value = 0;
+      this.source.connect(this.processor);
+      this.processor.connect(this.silentOutput);
+      this.silentOutput.connect(this.audioContext.destination);
+
+      this.startedAt = performance.now();
+      this.recording = true;
+      this.readMeter();
+    } catch (error) {
+      this.cancel();
+      throw error;
+    }
   }
 
   async stop(): Promise<Float32Array> {
-    const recorder = this.mediaRecorder;
-    if (!recorder || recorder.state === "inactive") {
+    if (!this.recording || !this.audioContext) {
       throw new Error("No recording is active.");
     }
 
-    const stopped = new Promise<void>((resolve) => recorder.addEventListener("stop", () => resolve(), { once: true }));
-    recorder.stop();
-    await stopped;
+    this.recording = false;
     cancelAnimationFrame(this.meterFrame);
     this.stream?.getTracks().forEach((track) => track.stop());
+    this.disconnectNodes();
 
-    const blob = new Blob(this.chunks, { type: recorder.mimeType || "audio/webm" });
-    const samples = await decodeAndResample(blob, this.audioContext ?? undefined);
-    await this.audioContext?.close();
-    this.reset();
-    return samples;
+    const context = this.audioContext;
+    const samples = mergePcmChunks(this.chunks);
+    try {
+      return await resamplePcm(samples, context.sampleRate);
+    } finally {
+      await context.close().catch(() => undefined);
+      this.reset();
+    }
   }
 
   cancel(): void {
-    if (this.mediaRecorder?.state === "recording") this.mediaRecorder.stop();
+    this.recording = false;
     cancelAnimationFrame(this.meterFrame);
     this.stream?.getTracks().forEach((track) => track.stop());
+    this.disconnectNodes();
     void this.audioContext?.close();
     this.reset();
   }
 
+  private disconnectNodes(): void {
+    if (this.processor) this.processor.onaudioprocess = null;
+    this.source?.disconnect();
+    this.analyser?.disconnect();
+    this.processor?.disconnect();
+    this.silentOutput?.disconnect();
+  }
+
   private reset(): void {
     this.stream = null;
-    this.mediaRecorder = null;
+    this.source = null;
+    this.processor = null;
+    this.silentOutput = null;
     this.audioContext = null;
     this.analyser = null;
     this.chunks = [];
     this.onMeter = null;
+    this.recording = false;
   }
 
   private readMeter = (): void => {
@@ -104,6 +131,33 @@ export class AudioRecorder {
     });
     this.meterFrame = requestAnimationFrame(this.readMeter);
   };
+}
+
+export function mergePcmChunks(chunks: readonly Float32Array[]): Float32Array {
+  const sampleCount = chunks.reduce((total, chunk) => total + chunk.length, 0);
+  const result = new Float32Array(sampleCount);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+
+async function resamplePcm(samples: Float32Array, inputSampleRate: number): Promise<Float32Array> {
+  if (samples.length === 0 || inputSampleRate === TARGET_SAMPLE_RATE) return new Float32Array(samples);
+  const frameCount = Math.max(1, Math.ceil((samples.length * TARGET_SAMPLE_RATE) / inputSampleRate));
+  const offline = new OfflineAudioContext(1, frameCount, TARGET_SAMPLE_RATE);
+  const buffer = offline.createBuffer(1, samples.length, inputSampleRate);
+  const ownedSamples = new Float32Array(samples.length);
+  ownedSamples.set(samples);
+  buffer.copyToChannel(ownedSamples, 0);
+  const source = offline.createBufferSource();
+  source.buffer = buffer;
+  source.connect(offline.destination);
+  source.start();
+  const rendered = await offline.startRendering();
+  return new Float32Array(rendered.getChannelData(0));
 }
 
 export async function decodeAndResample(blob: Blob, existingContext?: AudioContext): Promise<Float32Array> {
